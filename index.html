@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Print Farm Tycoon</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="tutorialModal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Welcome to Mini Print Farm Tycoon</h2>
+      <p>Build your tiny 3D print empire from a dorm room to an industrial warehouse.</p>
+      <ul>
+        <li>Review jobs and accept profitable ones.</li>
+        <li>Buy printers and assign jobs to idle machines.</li>
+        <li>Beat deadlines to grow reputation and unlock better contracts.</li>
+      </ul>
+      <button id="closeTutorialBtn" class="btn primary">Start Building</button>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <h1>Mini Print Farm Tycoon</h1>
+    <div class="stats-grid" id="topStats"></div>
+    <div class="reputation-wrap">
+      <span>Reputation</span>
+      <div class="rep-bar"><div id="repFill"></div></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="diorama-panel">
+      <div class="location-scene" id="locationScene"></div>
+      <div class="autosave" id="autosaveNotice">Autosave ready</div>
+    </section>
+
+    <section class="tabs-panel">
+      <div class="tab-buttons">
+        <button class="btn tab active" data-tab="jobs">Jobs</button>
+        <button class="btn tab" data-tab="printers">Printers</button>
+        <button class="btn tab" data-tab="upgrades">Upgrades</button>
+        <button class="btn tab" data-tab="locations">Locations</button>
+      </div>
+
+      <div id="tab-jobs" class="tab-content active"></div>
+      <div id="tab-printers" class="tab-content"></div>
+      <div id="tab-upgrades" class="tab-content"></div>
+      <div id="tab-locations" class="tab-content"></div>
+    </section>
+
+    <aside class="event-panel">
+      <h3>Event Feed</h3>
+      <div id="eventLog"></div>
+      <button id="resetBtn" class="btn danger">Reset Game</button>
+    </aside>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
