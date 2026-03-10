@@ -9,36 +9,28 @@
 <body>
   <div id="tutorialModal" class="modal hidden">
     <div class="modal-card">
-      <h2>Mini Print Farm Tycoon</h2>
-      <p>Start small, print smart, and scale from a dorm setup to a full warehouse farm.</p>
+      <h2>Welcome to Mini Print Farm Tycoon</h2>
+      <p>Build your tiny 3D print empire from a dorm room to an industrial warehouse.</p>
       <ul>
-        <li>Buy your first <strong>P1S</strong> and take Tier 1 jobs.</li>
-        <li>Move jobs through <strong>Available → Accepted → Active → History</strong>.</li>
-        <li>Click printers in the workshop for controls, maintenance, and upgrades.</li>
+        <li>Review jobs and accept profitable ones.</li>
+        <li>Buy printers and assign jobs to idle machines.</li>
+        <li>Beat deadlines to grow reputation and unlock better contracts.</li>
       </ul>
-      <button id="closeTutorialBtn" class="btn primary">Begin Shift</button>
+      <button id="closeTutorialBtn" class="btn primary">Start Building</button>
     </div>
   </div>
 
   <header class="topbar">
-    <div class="brand">
-      <h1>Mini Print Farm Tycoon</h1>
-      <span class="tag">Industrial Prototype Build</span>
-    </div>
+    <h1>Mini Print Farm Tycoon</h1>
     <div class="stats-grid" id="topStats"></div>
     <div class="reputation-wrap">
       <span>Reputation</span>
       <div class="rep-bar"><div id="repFill"></div></div>
-      <span id="repText">50 / 100</span>
     </div>
   </header>
 
   <main class="layout">
     <section class="diorama-panel">
-      <div class="scene-header">
-        <h3>Workshop Floor</h3>
-        <span id="sceneLocationLabel"></span>
-      </div>
       <div class="location-scene" id="locationScene"></div>
       <div class="autosave" id="autosaveNotice">Autosave ready</div>
     </section>
@@ -58,15 +50,11 @@
     </section>
 
     <aside class="event-panel">
-      <div class="panel-head">
-        <h3>Ops Feed</h3>
-        <button id="resetBtn" class="btn danger">Reset</button>
-      </div>
+      <h3>Event Feed</h3>
       <div id="eventLog"></div>
+      <button id="resetBtn" class="btn danger">Reset Game</button>
     </aside>
   </main>
-
-  <div id="printerDetailPanel" class="drawer hidden"></div>
 
   <script src="script.js"></script>
 </body>

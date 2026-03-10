@@ -3,26 +3,25 @@ class Printer {
     this.id = id;
     this.model = model;
     this.name = model.name;
-    this.status = 'idle'; // idle, printing, paused, failed, ready
+    this.status = 'idle';
     this.currentJobId = null;
     this.upgradeLevel = 0;
-    this.condition = 100;
-    this.completedBuffer = 0;
+    this.health = 100;
   }
 
   get statBlock() {
     const b = this.model;
     const up = this.upgradeLevel;
-    const condFactor = 0.85 + (this.condition / 100) * 0.2;
     return {
-      speed: b.speed * (1 + up * 0.09) * condFactor,
-      reliability: Math.min(99, b.reliability + up * 3 + Math.floor(this.condition / 20)),
+      speed: b.speed * (1 + up * 0.08),
+      reliability: Math.min(99, b.reliability + up * 3),
       quality: b.quality + up * 2,
       complexity: b.complexity + up * 2,
       maxSize: b.maxSize + up * 4,
       multicolor: b.multicolor + up * 2,
-      failChance: Math.max(0.0001, b.failChance - up * 0.00003 + (100 - this.condition) / 90000),
-      healthState: this.condition > 74 ? 'Excellent' : this.condition > 45 ? 'Stable' : 'Needs maintenance'
+      maintenance: Math.max(5, b.maintenance - up),
+      failChance: Math.max(0.01, b.failChance - up * 0.01),
+      deadlineEfficiency: 1 + up * 0.03
     };
   }
 }
@@ -30,13 +29,12 @@ class Printer {
 class Job {
   constructor(data) {
     Object.assign(this, data);
-    this.status = 'available';
+    this.status = 'waiting';
     this.progress = 0;
     this.assignedPrinterId = null;
     this.totalMinutes = data.requiredTime;
     this.remainingMinutes = data.requiredTime;
     this.createdAtDay = 0;
-    this.failureChanceHint = data.failureChanceHint || 'Low';
   }
 }
 
@@ -53,8 +51,10 @@ class Upgrade {
 }
 
 class SaveManager {
-  static key = 'miniPrintFarmTycoonSaveV2';
-  static save(game) { localStorage.setItem(this.key, JSON.stringify(game.serialize())); }
+  static key = 'miniPrintFarmTycoonSaveV1';
+  static save(game) {
+    localStorage.setItem(this.key, JSON.stringify(game.serialize()));
+  }
   static load() {
     const raw = localStorage.getItem(this.key);
     return raw ? JSON.parse(raw) : null;
@@ -64,159 +64,112 @@ class SaveManager {
 
 class GameState {
   constructor() {
-    // Ordered best to worst for economy, while preserving specialization.
     this.printerCatalog = [
-      { name: 'H2C', tier: 5, cost: 3200, speed: 93, reliability: 94, quality: 95, complexity: 98, maxSize: 94, multicolor: 99, failChance: 0.00018, spriteScale: 1.2, specialty: 'Advanced multi-material specialist' },
-      { name: 'H2D', tier: 4, cost: 2800, speed: 95, reliability: 93, quality: 89, complexity: 91, maxSize: 100, multicolor: 90, failChance: 0.00022, spriteScale: 1.24, specialty: 'Large-format production powerhouse' },
-      { name: 'P2S', tier: 3, cost: 1680, speed: 84, reliability: 95, quality: 83, complexity: 84, maxSize: 68, multicolor: 86, failChance: 0.0002, spriteScale: 1.12, specialty: 'Reliability/value upper-tier workhorse' },
-      { name: 'X1C', tier: 2, cost: 1260, speed: 82, reliability: 91, quality: 90, complexity: 86, maxSize: 66, multicolor: 88, failChance: 0.00028, spriteScale: 1.1, specialty: 'Precision + smart detail jobs' },
-      { name: 'P1S', tier: 1, cost: 520, speed: 72, reliability: 88, quality: 68, complexity: 63, maxSize: 62, multicolor: 48, failChance: 0.00035, spriteScale: 1, specialty: 'Best affordable starter farm unit' }
+      { name: 'P1S', tier: 1, cost: 520, speed: 58, reliability: 80, quality: 62, complexity: 56, maxSize: 58, multicolor: 40, maintenance: 12, failChance: 0.07, spriteScale: 1 },
+      { name: 'X1C', tier: 2, cost: 980, speed: 72, reliability: 84, quality: 78, complexity: 74, maxSize: 58, multicolor: 74, maintenance: 14, failChance: 0.055, spriteScale: 1.08 },
+      { name: 'P2S', tier: 3, cost: 1250, speed: 76, reliability: 90, quality: 75, complexity: 76, maxSize: 60, multicolor: 82, maintenance: 13, failChance: 0.04, spriteScale: 1.1 },
+      { name: 'H2D', tier: 4, cost: 2150, speed: 84, reliability: 86, quality: 83, complexity: 84, maxSize: 95, multicolor: 88, maintenance: 19, failChance: 0.05, spriteScale: 1.2 },
+      { name: 'H2C', tier: 5, cost: 2600, speed: 82, reliability: 88, quality: 88, complexity: 92, maxSize: 90, multicolor: 98, maintenance: 22, failChance: 0.045, spriteScale: 1.24 }
     ];
 
     this.locations = [
-      new Location({ id: 'dorm', name: 'Dorm Room', unlockCost: 0, requiredPrinters: 0, capacity: 4, jobTier: 1, bonus: { payout: 1, failMod: 1.04 }, theme: 'scrappy startup desk, spools and boxes' }),
-      new Location({ id: 'office', name: 'Office', unlockCost: 5000, requiredPrinters: 5, capacity: 10, jobTier: 2, bonus: { payout: 1.18, failMod: 0.95 }, theme: 'organized startup workshop with shelves' }),
-      new Location({ id: 'warehouse', name: 'Warehouse', unlockCost: 13000, requiredPrinters: 10, capacity: 18, jobTier: 3, bonus: { payout: 1.35, failMod: 0.88 }, theme: 'industrial farm lanes and heavy fixtures' })
+      new Location({ id: 'dorm', name: 'Dorm Room', unlockCost: 0, requiredPrinters: 0, capacity: 4, jobTier: 1, bonus: { payout: 1, failMod: 1.04 }, theme: 'cramped hobby setup' }),
+      new Location({ id: 'office', name: 'Office', unlockCost: 4500, requiredPrinters: 5, capacity: 9, jobTier: 2, bonus: { payout: 1.15, failMod: 0.94 }, theme: 'professional workshop' }),
+      new Location({ id: 'warehouse', name: 'Warehouse', unlockCost: 12000, requiredPrinters: 10, capacity: 16, jobTier: 3, bonus: { payout: 1.35, failMod: 0.88 }, theme: 'industrial print floor' })
     ];
 
     this.shopUpgrades = [
-      new Upgrade('workflow', { name: 'Workflow Optimization', cost: 700, effect: '+10% print throughput', apply: g => g.modifiers.workflow += 0.1 }),
-      new Upgrade('slots', { name: 'Lead List Expansion', cost: 900, effect: '+2 available job slots', apply: g => g.maxJobListings += 2 }),
-      new Upgrade('leads', { name: 'Premium Lead Generation', cost: 1200, effect: 'Higher premium job chance', apply: g => g.modifiers.premiumChance += 0.1 }),
-      new Upgrade('repShield', { name: 'Client Relations Shield', cost: 1300, effect: '-25% reputation penalties', apply: g => g.modifiers.repPenaltyReduction += 0.25 }),
-      new Upgrade('maintenanceTools', { name: 'Maintenance Tool Crate', cost: 950, effect: 'Global failure chance reduction', apply: g => g.modifiers.failReduction += 0.012 }),
-      new Upgrade('recovery', { name: 'Failure Recovery SOP', cost: 1200, effect: 'Restarts lose less time', apply: g => g.modifiers.restartTimePenalty -= 0.1 }),
-      new Upgrade('scheduler', { name: 'Scheduling Dashboard', cost: 950, effect: 'Lower deadline stress effect', apply: g => g.modifiers.deadlineStressReduction += 0.25 })
+      new Upgrade('workflow', { name: 'Workflow Optimization', cost: 700, effect: 'Jobs complete 8% faster.', apply: g => g.modifiers.workflow += 0.08 }),
+      new Upgrade('jobSlots', { name: 'Additional Listing Slots', cost: 900, effect: '+2 available job slots.', apply: g => g.maxJobListings += 2 }),
+      new Upgrade('leadGen', { name: 'Lead Generation', cost: 1100, effect: 'Premium jobs appear more often.', apply: g => g.modifiers.premiumChance += 0.08 }),
+      new Upgrade('repShield', { name: 'Reputation Protection', cost: 1400, effect: 'Negative reputation impacts reduced.', apply: g => g.modifiers.repPenaltyReduction += 0.25 }),
+      new Upgrade('maintenanceTools', { name: 'Maintenance Tools', cost: 1000, effect: 'Printer failure chance reduced.', apply: g => g.modifiers.failReduction += 0.015 }),
+      new Upgrade('recovery', { name: 'Failure Recovery Kit', cost: 1200, effect: 'Restarts lose less time.', apply: g => g.modifiers.restartTimePenalty -= 0.08 }),
+      new Upgrade('scheduler', { name: 'Scheduling Console', cost: 1000, effect: 'Deadline pressure has less impact.', apply: g => g.modifiers.deadlineStressReduction += 0.2 })
     ];
 
     this.reset();
   }
 
   reset() {
-    this.money = 820;
+    this.money = 750;
     this.reputation = 50;
     this.day = 1;
     this.minutes = 8 * 60;
     this.printers = [];
     this.jobsAvailable = [];
     this.jobsAccepted = [];
-    this.jobsHistory = [];
     this.nextPrinterId = 1;
     this.nextJobId = 1;
     this.currentLocationId = 'dorm';
     this.unlockedLocations = ['dorm'];
-    this.eventFeed = ['Operations online. Buy your first P1S and start with Tier 1 jobs.'];
-    this.maxJobListings = 6;
-    this.modifiers = { workflow: 0, premiumChance: 0, repPenaltyReduction: 0, failReduction: 0, restartTimePenalty: 0, deadlineStressReduction: 0 };
+    this.eventFeed = ['Welcome to your Dorm Room print startup.'];
+    this.maxJobListings = 5;
+    this.modifiers = {
+      workflow: 0,
+      premiumChance: 0,
+      repPenaltyReduction: 0,
+      failReduction: 0,
+      restartTimePenalty: 0,
+      deadlineStressReduction: 0
+    };
     this.successStreak = 0;
-    this.rejectionCounter = 0;
+    this.lastRejections = 0;
     this.firstLoadSeen = false;
-    this.selectedPrinterId = null;
     this.refillJobs();
   }
 
-  get location() { return this.locations.find(x => x.id === this.currentLocationId); }
+  get location() { return this.locations.find(l => l.id === this.currentLocationId); }
+  get activeJobsCount() { return this.jobsAccepted.filter(j => j.status === 'printing' || j.status === 'waiting').length; }
+
+  addLog(msg) {
+    this.eventFeed.unshift(`[Day ${this.day} ${this.timeString}] ${msg}`);
+    this.eventFeed = this.eventFeed.slice(0, 120);
+  }
+
   get timeString() {
     const h = Math.floor(this.minutes / 60) % 24;
-    const m = Math.floor(this.minutes % 60);
+    const m = this.minutes % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
 
-  addLog(text) {
-    this.eventFeed.unshift(`[D${this.day} ${this.timeString}] ${text}`);
-    this.eventFeed = this.eventFeed.slice(0, 140);
-  }
-
-  adjustRep(amount) {
-    this.reputation = Math.max(0, Math.min(100, this.reputation + amount));
-    if (amount < 0) this.successStreak = 0;
-  }
-
-  highestPrinterTier() {
-    return this.printers.length ? Math.max(...this.printers.map(p => p.model.tier + Math.floor(p.upgradeLevel / 2))) : 1;
-  }
-
-  affordableModels() {
-    return this.printerCatalog.filter(m => this.money >= m.cost);
-  }
-
-  buyPrinter(name) {
-    if (this.printers.length >= this.location.capacity) return 'Location capacity reached.';
-    const model = this.printerCatalog.find(m => m.name === name);
-    if (!model) return 'Unknown printer model.';
-    if (this.money < model.cost) return 'Not enough money.';
+  buyPrinter(modelName) {
+    if (this.printers.length >= this.location.capacity) return 'Capacity reached for current location.';
+    const model = this.printerCatalog.find(p => p.name === modelName);
+    if (!model || this.money < model.cost) return 'Not enough money.';
     this.money -= model.cost;
     this.printers.push(new Printer(this.nextPrinterId++, model));
-    this.addLog(`${model.name} installed on the floor.`);
+    this.addLog(`${model.name} added to your farm.`);
     return null;
   }
 
   upgradePrinter(id) {
     const p = this.printers.find(x => x.id === id);
-    if (!p) return 'Printer not found.';
-    const cost = Math.round(250 * (p.upgradeLevel + 1) * (1 + p.model.tier * 0.35));
+    if (!p) return 'Printer missing.';
+    const cost = Math.round(220 * (p.upgradeLevel + 1) * (1 + p.model.tier * 0.4));
     if (this.money < cost) return 'Not enough money.';
     this.money -= cost;
     p.upgradeLevel += 1;
-    p.condition = Math.min(100, p.condition + 8);
-    this.addLog(`${p.name} #${p.id} upgraded to Mk.${p.upgradeLevel}.`);
-    return null;
-  }
-
-  maintainPrinter(id) {
-    const p = this.printers.find(x => x.id === id);
-    if (!p) return 'Printer not found.';
-    const cost = Math.round(40 + (100 - p.condition) * 2.2 + p.model.tier * 6);
-    if (this.money < cost) return 'Not enough money.';
-    this.money -= cost;
-    p.condition = Math.min(100, p.condition + 28);
-    this.addLog(`Maintenance complete on ${p.name} #${p.id}.`);
-    return null;
-  }
-
-  pausePrinter(id) {
-    const p = this.printers.find(x => x.id === id);
-    if (!p || p.status !== 'printing') return 'Printer is not actively printing.';
-    p.status = 'paused';
-    const job = this.jobsAccepted.find(j => j.id === p.currentJobId);
-    if (job) job.status = 'paused';
-    this.addLog(`${p.name} #${p.id} paused.`);
-    return null;
-  }
-
-  resumePrinter(id) {
-    const p = this.printers.find(x => x.id === id);
-    if (!p || p.status !== 'paused') return 'Printer is not paused.';
-    p.status = 'printing';
-    const job = this.jobsAccepted.find(j => j.id === p.currentJobId);
-    if (job) job.status = 'printing';
-    this.addLog(`${p.name} #${p.id} resumed.`);
-    return null;
-  }
-
-  cancelPrinterJob(id) {
-    const p = this.printers.find(x => x.id === id);
-    if (!p || !p.currentJobId) return 'No assigned job.';
-    this.forfeitJob(p.currentJobId, true);
+    this.addLog(`${p.name} upgraded to Mk.${p.upgradeLevel}.`);
     return null;
   }
 
   buyShopUpgrade(id) {
     const up = this.shopUpgrades.find(u => u.id === id);
-    if (!up || up.purchased) return 'Upgrade unavailable.';
+    if (!up || up.purchased) return 'Unavailable.';
     if (this.money < up.cost) return 'Not enough money.';
     this.money -= up.cost;
     up.purchased = true;
     up.apply(this);
-    this.addLog(`Business upgrade installed: ${up.name}.`);
+    this.addLog(`Business upgrade purchased: ${up.name}.`);
     return null;
   }
 
   unlockLocation(id) {
     const loc = this.locations.find(l => l.id === id);
-    if (!loc || this.unlockedLocations.includes(id)) return 'Location unavailable.';
-    if (this.printers.length < loc.requiredPrinters) return `Needs ${loc.requiredPrinters} printers.`;
+    if (!loc || this.unlockedLocations.includes(id)) return 'Unavailable.';
     if (this.money < loc.unlockCost) return 'Not enough money.';
+    if (this.printers.length < loc.requiredPrinters) return `Requires ${loc.requiredPrinters} printers.`;
     this.money -= loc.unlockCost;
     this.unlockedLocations.push(id);
     this.currentLocationId = id;
@@ -231,320 +184,190 @@ class GameState {
     return null;
   }
 
-  rejectJob(id) {
-    const before = this.jobsAvailable.length;
-    this.jobsAvailable = this.jobsAvailable.filter(j => j.id !== id);
-    if (before === this.jobsAvailable.length) return;
-    this.rejectionCounter += 1;
-    if (this.day <= 2) {
-      if (this.rejectionCounter % 6 === 0) this.adjustRep(-1);
-    } else if (this.rejectionCounter % 4 === 0) {
-      this.adjustRep(-1);
-    }
+  rejectJob(jobId) {
+    this.jobsAvailable = this.jobsAvailable.filter(j => j.id !== jobId);
+    this.lastRejections += 1;
+    if (this.lastRejections % 3 === 0) this.adjustRep(-1);
     this.refillJobs();
   }
 
-  acceptJob(id) {
-    const idx = this.jobsAvailable.findIndex(j => j.id === id);
+  acceptJob(jobId) {
+    const idx = this.jobsAvailable.findIndex(j => j.id === jobId);
     if (idx < 0) return;
     const [job] = this.jobsAvailable.splice(idx, 1);
-    job.status = 'accepted';
     job.createdAtDay = this.day;
     this.jobsAccepted.push(job);
-    this.addLog(`Accepted: ${job.title} (${job.recommendedPrinter}).`);
+    this.addLog(`Accepted job: ${job.title}.`);
     this.refillJobs();
   }
 
   assignJob(jobId, printerId) {
     const job = this.jobsAccepted.find(j => j.id === jobId);
     const printer = this.printers.find(p => p.id === printerId);
-    if (!job || !printer || !['idle', 'ready'].includes(printer.status) || job.status !== 'accepted') return 'Invalid assignment.';
+    if (!job || !printer || printer.status !== 'idle' || job.status !== 'waiting') return 'Invalid assignment.';
     const s = printer.statBlock;
-    if (s.maxSize < job.sizeRequirement || s.complexity < job.complexityRequirement) return 'Printer cannot handle job size/complexity.';
-    if (s.multicolor < job.colorComplexity) return 'Printer multicolor capability too low.';
+    if (s.maxSize < job.sizeRequirement || s.complexity < job.complexityRequirement) return 'Printer cannot handle this job.';
     job.assignedPrinterId = printerId;
     job.status = 'printing';
-    job.failureChanceHint = this.estimateFailureRisk(job, printer).label;
     printer.status = 'printing';
     printer.currentJobId = job.id;
-    printer.completedBuffer = 0;
-    this.addLog(`${job.title} assigned to ${printer.name} #${printer.id}.`);
+    this.addLog(`Assigned ${job.title} to ${printer.name}.`);
     return null;
   }
 
-  forfeitJob(jobId, fromCancel = false) {
+  forfeitJob(jobId) {
     const job = this.jobsAccepted.find(j => j.id === jobId);
     if (!job || ['completed', 'forfeited', 'missed deadline'].includes(job.status)) return;
-    const printer = this.printers.find(p => p.id === job.assignedPrinterId);
-    if (printer) {
-      printer.status = 'idle';
-      printer.currentJobId = null;
-    }
     job.status = 'forfeited';
-    this.jobsHistory.unshift({ ...job });
-    this.jobsAccepted = this.jobsAccepted.filter(j => j.id !== job.id);
-    this.adjustRep(-Math.max(1, Math.round((3 + job.difficulty / 2) * (1 - this.modifiers.repPenaltyReduction))));
-    this.addLog(`${fromCancel ? 'Canceled' : 'Forfeited'} job: ${job.title}.`);
+    this.releasePrinter(job.assignedPrinterId);
+    this.adjustRep(-Math.round(4 * (1 - this.modifiers.repPenaltyReduction)));
+    this.addLog(`Forfeited job: ${job.title}.`);
   }
 
   restartJob(jobId) {
     const job = this.jobsAccepted.find(j => j.id === jobId);
     if (!job || job.status !== 'failed') return;
-    if (job.deadlineMinutes <= 20) return this.forfeitJob(jobId);
-    const penalty = Math.max(0.1, 0.28 + this.modifiers.restartTimePenalty);
+    if (job.deadlineMinutes <= 25) {
+      this.forfeitJob(jobId);
+      return;
+    }
+    const penalty = 0.22 + this.modifiers.restartTimePenalty;
     job.remainingMinutes = Math.ceil(job.totalMinutes * (1 - penalty));
-    job.progress = 100 - (job.remainingMinutes / job.totalMinutes) * 100;
+    job.progress = (1 - job.remainingMinutes / job.totalMinutes) * 100;
     job.status = 'printing';
     const p = this.printers.find(x => x.id === job.assignedPrinterId);
-    if (p) p.status = 'printing';
-    this.addLog(`Restarted failed print: ${job.title}.`);
+    if (p) { p.status = 'printing'; p.currentJobId = job.id; }
+    this.addLog(`Restarted failed job: ${job.title}.`);
   }
 
-  inspectPrinter(id) {
-    const p = this.printers.find(x => x.id === id);
-    if (!p) return;
-    const load = p.currentJobId ? this.jobsAccepted.find(j => j.id === p.currentJobId)?.title || 'assigned job' : 'no job';
-    this.addLog(`Inspection ${p.name} #${p.id}: ${p.statBlock.healthState}, ${load}.`);
+  releasePrinter(printerId) {
+    const p = this.printers.find(x => x.id === printerId);
+    if (p) { p.status = 'idle'; p.currentJobId = null; }
   }
 
-  updateTick(delta = 1) {
-    this.minutes += delta;
-    while (this.minutes >= 1440) {
-      this.minutes -= 1440;
+  updateTick(deltaMinutes = 1) {
+    this.minutes += deltaMinutes;
+    while (this.minutes >= 24 * 60) {
+      this.minutes -= 24 * 60;
       this.day += 1;
-      this.printers.forEach(p => p.condition = Math.max(30, p.condition - 1));
     }
 
     this.jobsAccepted.forEach(job => {
-      job.deadlineMinutes -= delta;
-      if (job.deadlineMinutes <= 0 && !['completed', 'forfeited', 'missed deadline'].includes(job.status)) {
+      if (['completed', 'forfeited', 'missed deadline'].includes(job.status)) return;
+      job.deadlineMinutes -= deltaMinutes;
+      if (job.deadlineMinutes <= 0 && job.status !== 'completed') {
         job.status = 'missed deadline';
-        const p = this.printers.find(x => x.id === job.assignedPrinterId);
-        if (p) { p.status = 'idle'; p.currentJobId = null; }
-        this.jobsHistory.unshift({ ...job });
-        this.jobsAccepted = this.jobsAccepted.filter(j => j.id !== job.id);
-        this.adjustRep(-Math.max(2, Math.round((5 + job.difficulty) * (1 - this.modifiers.repPenaltyReduction))));
+        this.releasePrinter(job.assignedPrinterId);
+        this.adjustRep(-Math.round((6 + job.difficulty) * (1 - this.modifiers.repPenaltyReduction)));
         this.addLog(`Deadline missed: ${job.title}.`);
         return;
       }
-
       if (job.status !== 'printing') return;
+
       const p = this.printers.find(x => x.id === job.assignedPrinterId);
       if (!p) return;
       const s = p.statBlock;
+      const speed = (s.speed / 60) * (1 + this.modifiers.workflow) * this.location.bonus.payout / 1.08;
+      job.remainingMinutes -= speed * deltaMinutes;
+      job.progress = Math.max(0, Math.min(100, 100 * (1 - job.remainingMinutes / job.totalMinutes)));
 
-      const speed = (s.speed / 65) * (1 + this.modifiers.workflow) * (1 + p.upgradeLevel * 0.02);
-      job.remainingMinutes -= speed * delta;
-      job.progress = Math.max(0, Math.min(100, 100 - (job.remainingMinutes / job.totalMinutes) * 100));
-
-      p.condition = Math.max(15, p.condition - 0.05 * (1 + job.difficulty * 0.1));
-
-      const risk = this.estimateFailureRisk(job, p).perMinute;
-
-      if (Math.random() < risk * delta) {
+      const pressure = job.deadlineMinutes < job.remainingMinutes * 0.9 ? 0.025 : 0;
+      const difficultyRisk = 0.0025 * job.difficulty + 0.0016 * job.complexity;
+      const failChance = Math.max(0.002, (s.failChance + difficultyRisk + pressure * (1 - this.modifiers.deadlineStressReduction) - this.modifiers.failReduction) * this.location.bonus.failMod / Math.max(0.7, s.reliability / 100));
+      if (Math.random() < failChance * deltaMinutes) {
         job.status = 'failed';
-        p.status = 'failed';
-        this.adjustRep(-Math.max(1, Math.round((1.5 + job.failureSensitivity) * (1 - this.modifiers.repPenaltyReduction))));
-        this.addLog(`Print failed on ${p.name} #${p.id}: ${job.title}.`);
+        this.releasePrinter(job.assignedPrinterId);
+        this.adjustRep(-Math.round((2 + job.failureSensitivity) * (1 - this.modifiers.repPenaltyReduction)));
+        this.addLog(`Print failed on ${p.name}: ${job.title}.`);
         return;
       }
 
       if (job.remainingMinutes <= 0) {
         job.status = 'completed';
-        p.status = 'ready';
-        p.completedBuffer = 20;
+        this.releasePrinter(job.assignedPrinterId);
         const onTime = job.deadlineMinutes > 0;
-        const payout = Math.round(job.payout * this.location.bonus.payout * (onTime ? 1.1 : 0.88));
+        const payout = Math.round(job.payout * this.location.bonus.payout * (onTime ? 1.1 : 0.85));
         this.money += payout;
-        const repGain = Math.round((2 + job.difficulty * 0.55) * (onTime ? 1.1 : 0.7));
+        const repGain = Math.round((2 + job.difficulty / 2) * (onTime ? 1.2 : 0.5));
         this.adjustRep(repGain);
         this.successStreak += 1;
-        if (this.successStreak > 0 && this.successStreak % 4 === 0) {
+        if (this.successStreak % 5 === 0) {
           this.adjustRep(2);
-          this.addLog('Client streak bonus: +2 reputation.');
+          this.addLog('Success streak bonus reputation +2.');
         }
-        this.jobsHistory.unshift({ ...job });
-        this.jobsAccepted = this.jobsAccepted.filter(j => j.id !== job.id);
-        p.currentJobId = null;
-        this.addLog(`Delivered: ${job.title} (+$${payout}).`);
+        this.addLog(`Job completed: ${job.title} (+$${payout}).`);
       }
     });
 
-    this.printers.forEach(p => {
-      if (p.status === 'ready') {
-        p.completedBuffer -= delta;
-        if (p.completedBuffer <= 0) p.status = 'idle';
-      }
-      if (p.status === 'failed' && Math.random() < 0.08) p.status = 'idle';
-    });
-
-    if (Math.random() < 0.12) this.refillJobs();
+    if (Math.random() < 0.08) this.refillJobs();
   }
 
-  estimateFailureRisk(job, printer) {
-    const s = printer.statBlock;
-    const tierCapacity = printer.model.tier * 2 + 1;
-    const diffGap = Math.max(0, job.difficulty - tierCapacity);
-    const complexityGap = Math.max(0, job.complexityRequirement - s.complexity);
-    const sizeGap = Math.max(0, job.sizeRequirement - s.maxSize);
-    const colorGap = Math.max(0, job.colorComplexity - s.multicolor);
-    const conditionPenalty = ((100 - printer.condition) / 100) * 0.0024;
-    const mismatchPenalty = diffGap * 0.00045 + complexityGap * 0.00011 + sizeGap * 0.00012 + colorGap * 0.0001;
-    const tightDeadline = job.deadlineMinutes < job.remainingMinutes * 0.65 ? 0.0018 : job.deadlineMinutes < job.remainingMinutes * 0.9 ? 0.0007 : 0;
-    const overclockPenalty = Math.max(0, printer.upgradeLevel - 2) * 0.00035;
-    const reliabilityReduction = (s.reliability - 80) * 0.00001;
-
-    const perMinute = Math.max(0.00015,
-      (s.failChance + conditionPenalty + mismatchPenalty + tightDeadline * (1 - this.modifiers.deadlineStressReduction) + overclockPenalty - reliabilityReduction - this.modifiers.failReduction * 0.4)
-      * this.location.bonus.failMod
-    );
-
-    const minutes = Math.max(1, Math.ceil(job.remainingMinutes));
-    const jobChance = 1 - Math.pow(1 - Math.min(0.08, perMinute), minutes);
-    const pct = Math.round(jobChance * 100);
-    const label = pct < 8 ? 'Low' : pct < 16 ? 'Moderate' : 'High';
-    return { perMinute, jobChance, percent: pct, label };
-  }
-
-  projectedRiskForJob(job) {
-    const suitable = this.printers
-      .filter(p => ['idle', 'ready', 'printing', 'paused', 'failed'].includes(p.status))
-      .filter(p => p.statBlock.maxSize >= job.sizeRequirement && p.statBlock.complexity >= job.complexityRequirement && p.statBlock.multicolor >= job.colorComplexity)
-      .sort((a, b) => b.statBlock.reliability - a.statBlock.reliability);
-
-    const target = suitable[0] || this.printers.sort((a, b) => b.statBlock.reliability - a.statBlock.reliability)[0];
-    if (!target) return { label: job.failureChanceHint || 'Moderate', percent: 12 };
-    return this.estimateFailureRisk(job, target);
+  adjustRep(amount) {
+    this.reputation = Math.max(0, Math.min(100, this.reputation + amount));
+    if (amount < 0) this.successStreak = 0;
   }
 
   refillJobs() {
-    while (this.jobsAvailable.length < this.maxJobListings) {
-      const job = this.generateJob();
-      job.status = 'available';
-      this.jobsAvailable.push(job);
-    }
-  }
-
-  recommendedPrinterForTier(tier) {
-    if (tier <= 1) return 'P1S';
-    if (tier === 2) return 'X1C / P2S';
-    if (tier === 3) return 'P2S / X1C';
-    if (tier === 4) return 'H2D';
-    return 'H2C / H2D';
+    while (this.jobsAvailable.length < this.maxJobListings) this.jobsAvailable.push(this.generateJob());
   }
 
   generateJob() {
-    const tierDefs = {
-      1: {
-        categories: ['keychains', 'simple holders', 'cable clips', 'basic stands', 'desk organizers', 'small gifts', 'simple brackets', 'name tags'],
-        clients: ['student', 'hobby customer', 'local business'],
-        prefixes: ['Quick', 'Starter', 'Campus', 'Basic', 'Simple'],
-        diff: [1, 3], size: [36, 58], complexity: [30, 62], colors: [0, 42], time: [35, 95], deadlineBonus: [110, 260], payout: [80, 240], rep: [1, 2], risk: 'Low'
-      },
-      2: {
-        categories: ['custom signs', 'display holders', 'replacement knobs', 'event badges', 'camera mounts', 'storage bins'],
-        clients: ['startup', 'local business', 'event organizer', 'classroom team'],
-        prefixes: ['Client', 'Studio', 'Batch', 'Custom', 'Branded'],
-        diff: [3, 5], size: [50, 70], complexity: [48, 76], colors: [20, 62], time: [70, 150], deadlineBonus: [95, 220], payout: [190, 460], rep: [2, 3], risk: 'Moderate'
-      },
-      3: {
-        categories: ['miniatures', 'cosplay parts', 'fixtures/jigs', 'drone components', 'classroom models'],
-        clients: ['startup', 'engineering team', 'event organizer', 'architecture firm'],
-        prefixes: ['Detailed', 'Multi-part', 'Precision', 'Prototype', 'Maker'],
-        diff: [5, 7], size: [58, 84], complexity: [66, 90], colors: [30, 82], time: [110, 210], deadlineBonus: [85, 190], payout: [360, 780], rep: [3, 4], risk: 'Elevated'
-      },
-      4: {
-        categories: ['engineering prototypes', 'architectural models', 'marketing display pieces', 'production fixtures'],
-        clients: ['engineering team', 'architecture firm', 'manufacturer'],
-        prefixes: ['Commercial', 'Engineering', 'Pilot Run', 'Rigorous', 'Spec'],
-        diff: [7, 9], size: [72, 95], complexity: [80, 102], colors: [48, 92], time: [160, 300], deadlineBonus: [70, 170], payout: [700, 1400], rep: [4, 6], risk: 'High'
-      },
-      5: {
-        categories: ['large-format enclosures', 'advanced multi-material assemblies', 'industrial replacement kits', 'high-detail exhibition models'],
-        clients: ['manufacturer', 'architecture firm', 'enterprise lab'],
-        prefixes: ['Flagship', 'Critical', 'High-end', 'Advanced', 'Enterprise'],
-        diff: [9, 10], size: [86, 110], complexity: [94, 115], colors: [65, 105], time: [230, 380], deadlineBonus: [60, 150], payout: [1400, 2600], rep: [6, 8], risk: 'Severe'
-      }
-    };
+    const categories = ['keychains', 'custom signs', 'stands/display holders', 'cosplay parts', 'engineering prototypes', 'drone components', 'architectural models', 'replacement parts', 'miniatures', 'fixtures/jigs', 'classroom models', 'marketing display pieces'];
+    const clients = ['student', 'startup', 'local business', 'engineering team', 'architecture firm', 'event organizer', 'hobby customer', 'manufacturer'];
+    const prefix = ['Express', 'Custom', 'Premium', 'Prototype', 'Batch', 'Festival', 'Studio', 'Detail'];
 
-    const repGate = this.reputation > 85 ? 5 : this.reputation > 72 ? 4 : this.reputation > 58 ? 3 : this.reputation > 46 ? 2 : 1;
-    const printerGate = Math.min(5, this.highestPrinterTier() + (this.printers.length >= 4 ? 1 : 0));
-    const locationGate = this.location.jobTier === 1 ? 2 : this.location.jobTier === 2 ? 4 : 5;
-    const maxTier = Math.max(1, Math.min(5, repGate, printerGate, locationGate));
+    const locationTier = this.location.jobTier;
+    const repTier = this.reputation > 80 ? 3 : this.reputation > 60 ? 2 : 1;
+    const printerPower = this.printers.length ? Math.max(...this.printers.map(p => p.model.tier)) : 1;
+    const maxTier = Math.min(5, locationTier + repTier + Math.floor(printerPower / 2));
+    const premiumChance = 0.08 + this.modifiers.premiumChance + (this.reputation / 200);
+    const tier = Math.random() < premiumChance ? maxTier : Math.max(1, maxTier - 2 + Math.floor(Math.random() * 3));
 
-    let tier;
-    if (this.printers.length <= 1 && this.day <= 2) {
-      tier = Math.random() < 0.8 ? 1 : 2;
-    } else {
-      const premiumRoll = 0.08 + this.modifiers.premiumChance + this.reputation / 240;
-      tier = Math.random() < premiumRoll ? maxTier : Math.max(1, maxTier - 1 + Math.floor(Math.random() * 2));
-    }
-
-    const d = tierDefs[tier];
-    const randRange = ([a, b]) => a + Math.floor(Math.random() * (b - a + 1));
-    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-    const difficulty = randRange(d.diff);
-    const sizeRequirement = randRange(d.size);
-    const complexityRequirement = randRange(d.complexity);
-    const colorComplexity = randRange(d.colors);
-    const requiredTime = randRange(d.time);
-    const deadlineMinutes = requiredTime + randRange(d.deadlineBonus);
-
-    const payoutBase = randRange(d.payout);
-    const payout = Math.round(payoutBase * (0.95 + this.reputation / 190));
+    const category = categories[Math.floor(Math.random() * categories.length)];
+    const client = clients[Math.floor(Math.random() * Math.min(clients.length, 3 + locationTier * 2))];
+    const complexity = 35 + tier * 11 + Math.floor(Math.random() * 12);
+    const sizeRequirement = 40 + tier * 9 + Math.floor(Math.random() * 18);
+    const multicolorNeed = Math.max(0, Math.floor((tier - 2) * 14 + Math.random() * 30));
+    const difficulty = Math.max(1, Math.min(10, Math.floor(tier * 1.7 + Math.random() * 2)));
+    const requiredTime = 45 + tier * 24 + Math.floor(Math.random() * 70);
+    const deadlineMinutes = requiredTime + 70 + Math.floor(Math.random() * 180) - tier * 8;
+    const payout = Math.round((90 + tier * 70 + difficulty * 16 + multicolorNeed * 1.2) * (0.85 + this.reputation / 170));
 
     return new Job({
       id: this.nextJobId++,
-      title: `${pick(d.prefixes)} ${pick(d.categories)}`,
-      clientType: pick(d.clients),
-      category: pick(d.categories),
+      title: `${prefix[Math.floor(Math.random() * prefix.length)]} ${category}`,
+      clientType: client,
+      category,
       difficulty,
-      complexity: complexityRequirement,
+      complexity,
       requiredTime,
       deadlineMinutes,
       payout,
-      reputationEffect: randRange(d.rep),
+      reputationEffect: Math.max(1, Math.floor(difficulty / 2)),
       sizeRequirement,
-      colorComplexity,
+      colorComplexity: multicolorNeed,
       failureSensitivity: Math.ceil(difficulty / 2),
-      complexityRequirement,
-      recommendedPrinter: this.recommendedPrinterForTier(tier),
-      tier,
-      failureChanceHint: d.risk
-    });
-  }
-
-  getAvailablePrintersForJob(jobId) {
-    const job = this.jobsAccepted.find(j => j.id === jobId);
-    if (!job) return [];
-    return this.printers.filter(p => {
-      const s = p.statBlock;
-      return ['idle', 'ready'].includes(p.status) && s.maxSize >= job.sizeRequirement && s.complexity >= job.complexityRequirement && s.multicolor >= job.colorComplexity;
+      complexityRequirement: complexity
     });
   }
 
   serialize() {
     return {
-      money: this.money, reputation: this.reputation, day: this.day, minutes: this.minutes,
-      printers: this.printers, jobsAvailable: this.jobsAvailable, jobsAccepted: this.jobsAccepted, jobsHistory: this.jobsHistory,
-      nextPrinterId: this.nextPrinterId, nextJobId: this.nextJobId, currentLocationId: this.currentLocationId, unlockedLocations: this.unlockedLocations,
-      eventFeed: this.eventFeed, maxJobListings: this.maxJobListings, modifiers: this.modifiers, successStreak: this.successStreak,
-      rejectionCounter: this.rejectionCounter, firstLoadSeen: this.firstLoadSeen,
-      upgrades: this.shopUpgrades.map(u => ({ id: u.id, purchased: u.purchased }))
+      money: this.money, reputation: this.reputation, day: this.day, minutes: this.minutes, nextPrinterId: this.nextPrinterId,
+      nextJobId: this.nextJobId, currentLocationId: this.currentLocationId, unlockedLocations: this.unlockedLocations,
+      eventFeed: this.eventFeed, printers: this.printers, jobsAvailable: this.jobsAvailable, jobsAccepted: this.jobsAccepted,
+      maxJobListings: this.maxJobListings, modifiers: this.modifiers, successStreak: this.successStreak, lastRejections: this.lastRejections,
+      upgrades: this.shopUpgrades.map(u => ({ id: u.id, purchased: u.purchased })), firstLoadSeen: this.firstLoadSeen
     };
   }
 
   hydrate(data) {
     this.reset();
     Object.assign(this, data);
-    this.printers = (data.printers || []).map(p => Object.assign(new Printer(p.id, this.printerCatalog.find(m => m.name === p.model?.name || p.name)), p));
-    this.jobsAvailable = (data.jobsAvailable || []).map(j => Object.assign(new Job(j), j));
-    this.jobsAccepted = (data.jobsAccepted || []).map(j => Object.assign(new Job(j), j));
-    this.jobsHistory = data.jobsHistory || [];
-    this.shopUpgrades.forEach(u => {
-      u.purchased = data.upgrades?.find(x => x.id === u.id)?.purchased || false;
-    });
+    this.printers = data.printers.map(p => Object.assign(new Printer(p.id, this.printerCatalog.find(m => m.name === p.model.name)), p));
+    this.jobsAvailable = data.jobsAvailable.map(j => Object.assign(new Job(j), j));
+    this.jobsAccepted = data.jobsAccepted.map(j => Object.assign(new Job(j), j));
+    this.shopUpgrades.forEach(u => u.purchased = data.upgrades?.find(x => x.id === u.id)?.purchased || false);
   }
 }
 
@@ -553,21 +376,15 @@ class Renderer {
     this.g = game;
     this.topStats = document.getElementById('topStats');
     this.repFill = document.getElementById('repFill');
-    this.repText = document.getElementById('repText');
     this.scene = document.getElementById('locationScene');
-    this.sceneLoc = document.getElementById('sceneLocationLabel');
     this.eventLog = document.getElementById('eventLog');
-    this.drawer = document.getElementById('printerDetailPanel');
     this.notice = document.getElementById('autosaveNotice');
-    this.activeTab = 'jobs';
-    this.activeJobsSubtab = 'available';
-
     this.tabs = [...document.querySelectorAll('.tab')];
-    this.tabs.forEach(t => t.addEventListener('click', () => this.switchTab(t.dataset.tab)));
+    this.tabs.forEach(btn => btn.addEventListener('click', () => this.switchTab(btn.dataset.tab)));
+    this.switchTab('jobs');
   }
 
   switchTab(tab) {
-    this.activeTab = tab;
     this.tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.tab-content').forEach(el => el.classList.toggle('active', el.id === `tab-${tab}`));
     this.renderPanels();
@@ -578,212 +395,33 @@ class Renderer {
     this.renderScene();
     this.renderPanels();
     this.renderLog();
-    this.renderPrinterDrawer();
   }
 
   renderTop() {
     const g = this.g;
-    const stats = [
-      ['Money', `$${Math.floor(g.money)}`],
-      ['Location', g.location.name],
-      ['Printers', `${g.printers.length}/${g.location.capacity}`],
-      ['Accepted', `${g.jobsAccepted.filter(j => j.status === 'accepted').length}`],
-      ['Active', `${g.jobsAccepted.filter(j => ['printing', 'paused', 'failed'].includes(j.status)).length}`],
-      ['Leads', `${g.jobsAvailable.length}`],
-      ['Day / Time', `${g.day} / ${g.timeString}`]
+    const map = [
+      ['Money', `$${Math.floor(g.money)}`], ['Location', g.location.name], ['Printers', `${g.printers.length}/${g.location.capacity}`],
+      ['Active Jobs', g.activeJobsCount], ['Available Jobs', g.jobsAvailable.length], ['Day/Time', `${g.day} / ${g.timeString}`], ['Rep Tier', g.reputation > 75 ? 'Premium' : g.reputation > 45 ? 'Standard' : 'Risky']
     ];
-
-    this.topStats.innerHTML = stats.map(([k, v]) => `<div class="stat"><div class="label">${k}</div><strong>${v}</strong></div>`).join('');
+    this.topStats.innerHTML = map.map(([k, v]) => `<div class="stat"><div class="muted">${k}</div><strong>${v}</strong></div>`).join('');
     this.repFill.style.width = `${g.reputation}%`;
-    this.repText.textContent = `${Math.round(g.reputation)} / 100`;
-  }
-
-  scenePropsForLocation(id) {
-    if (id === 'dorm') {
-      return [
-        ['prop-bench', 8, 24], ['prop-shelf', 72, 20], ['prop-box', 12, 58], ['prop-box', 22, 56], ['prop-spool', 79, 58]
-      ];
-    }
-    if (id === 'office') {
-      return [
-        ['prop-bench', 10, 20], ['prop-shelf', 70, 18], ['prop-shelf', 72, 28], ['prop-box', 8, 62], ['prop-spool', 83, 60]
-      ];
-    }
-    return [
-      ['prop-bench', 10, 18], ['prop-bench', 68, 18], ['prop-shelf', 8, 66], ['prop-shelf', 72, 66], ['prop-box', 45, 64], ['prop-spool', 54, 65]
-    ];
   }
 
   renderScene() {
     const g = this.g;
-    this.scene.innerHTML = '';
-    this.sceneLoc.textContent = `${g.location.name} · ${g.location.theme}`;
-
-    this.scenePropsForLocation(g.currentLocationId).forEach(([klass, x, y]) => {
-      const p = document.createElement('div');
-      p.className = `workshop-prop ${klass}`;
-      p.style.left = `${x}%`;
-      p.style.top = `${y}%`;
-      this.scene.appendChild(p);
-    });
-
+    this.scene.innerHTML = `<div class="scene-label">${g.location.name} • ${g.location.theme}</div>`;
     const cols = Math.ceil(Math.sqrt(Math.max(1, g.location.capacity)));
-    g.printers.forEach((printer, i) => {
+    g.printers.forEach((p, i) => {
       const node = document.createElement('div');
-      node.className = `printer-node ${printer.status === 'printing' ? 'printing' : ''}`;
-      node.style.left = `${8 + (i % cols) * (81 / cols)}%`;
-      node.style.top = `${40 + Math.floor(i / cols) * 12}%`;
-      node.style.transform = `scale(${printer.model.spriteScale})`;
-      node.dataset.printer = printer.id;
-
-      const job = g.jobsAccepted.find(j => j.id === printer.currentJobId);
-      const dotClass = printer.status === 'printing' ? 'dot-printing' : printer.status === 'paused' ? 'dot-paused' : printer.status === 'failed' ? 'dot-failed' : printer.status === 'ready' ? 'dot-ready' : 'dot-idle';
-      const progress = job ? job.progress : 0;
-
-      node.innerHTML = `
-        <div class="printer-head">
-          <span class="printer-type">${printer.name}</span>
-          <span class="status-dot ${dotClass}"></span>
-        </div>
-        <div class="printer-mini">${printer.status.toUpperCase()}</div>
-        <div class="printer-mini">${job ? job.title.slice(0, 16) : 'No active job'}</div>
-        <div class="printer-mini">HP ${Math.round(printer.condition)} · SPD ${Math.round(printer.statBlock.speed)}</div>
-        <div class="node-progress"><div style="width:${progress}%"></div></div>
-      `;
-
-      node.title = `${printer.name} #${printer.id}\nStatus: ${printer.status}\nClick for details`;
+      const x = 12 + (i % cols) * (78 / cols + 8);
+      const y = 22 + Math.floor(i / cols) * 14;
+      node.className = `printer-node ${p.status === 'printing' ? 'printing' : ''}`;
+      node.style.left = `${x}%`;
+      node.style.top = `${y}%`;
+      node.style.transform = `scale(${p.model.spriteScale})`;
+      node.title = `${p.name} #${p.id}\nStatus: ${p.status}\nUpgrade: Mk.${p.upgradeLevel}`;
       this.scene.appendChild(node);
     });
-  }
-
-  jobCard(job, mode) {
-    const urgency = job.deadlineMinutes < job.requiredTime * 0.8 ? 'badge danger' : job.deadlineMinutes < job.requiredTime * 1.1 ? 'badge warn' : 'badge';
-    const projectedRisk = mode === 'active' && job.assignedPrinterId
-      ? this.g.estimateFailureRisk(job, this.g.printers.find(p => p.id === job.assignedPrinterId) || this.g.printers[0])
-      : this.g.projectedRiskForJob(job);
-    const riskLabel = projectedRisk?.label || job.failureChanceHint || 'Moderate';
-    const riskPercent = projectedRisk?.percent ?? 12;
-    const riskClass = riskLabel === 'Low' ? 'badge' : riskLabel === 'Moderate' ? 'badge warn' : 'badge danger';
-
-    return `
-      <div class="card" title="Suggested: ${job.recommendedPrinter}">
-        <h4>${job.title}</h4>
-        <div class="row muted"><span>${job.clientType}</span><span>${job.category}</span></div>
-        <div class="row">
-          <span class="badge">Tier ${job.tier}</span>
-          <span class="${urgency}">Deadline ${Math.max(0, Math.ceil(job.deadlineMinutes))}m</span>
-          <span class="${riskClass}">Risk ${riskLabel} (${riskPercent}%)</span>
-        </div>
-        <div class="row muted">
-          <span>Size ${job.sizeRequirement}</span>
-          <span>Complexity ${job.complexityRequirement}</span>
-          <span>Color ${job.colorComplexity}</span>
-        </div>
-        <div class="row muted"><span>ETA ${job.requiredTime}m</span><span>Recommended ${job.recommendedPrinter}</span></div>
-        <div class="row"><strong>$${job.payout}</strong><span>Rep ±${job.reputationEffect}</span></div>
-        ${mode === 'available' ? `
-          <button class="btn primary" data-act="accept" data-id="${job.id}">Accept</button>
-          <button class="btn ghost" data-act="reject" data-id="${job.id}">Reject</button>
-        ` : ''}
-        ${mode === 'accepted' ? `
-          <select class="select" data-act="pickPrinter" data-id="${job.id}">
-            ${this.g.getAvailablePrintersForJob(job.id).map(p => `<option value="${p.id}">#${p.id} ${p.name} (${p.status})</option>`).join('') || `<option value="">No suitable idle printer</option>`}
-          </select>
-          <button class="btn primary" data-act="assign" data-id="${job.id}">Assign</button>
-          <button class="btn danger" data-act="forfeit" data-id="${job.id}">Forfeit</button>
-        ` : ''}
-        ${mode === 'active' ? `
-          <div class="progress"><div style="width:${job.progress}%"></div></div>
-          <div class="row muted"><span>Assigned #${job.assignedPrinterId || '-'}</span><span>Remaining ${Math.max(0, Math.ceil(job.remainingMinutes))}m</span></div>
-          ${job.status === 'failed' ? `<button class="btn primary" data-act="restart" data-id="${job.id}">Restart</button>` : ''}
-          <button class="btn danger" data-act="forfeit" data-id="${job.id}">Forfeit</button>
-        ` : ''}
-        ${mode === 'history' ? `<div class="row muted"><span>Status: ${job.status}</span><span>Final progress ${Math.round(job.progress)}%</span></div>` : ''}
-      </div>
-    `;
-  }
-
-  renderJobs() {
-    const g = this.g;
-    const groups = {
-      available: g.jobsAvailable,
-      accepted: g.jobsAccepted.filter(j => j.status === 'accepted'),
-      active: g.jobsAccepted.filter(j => ['printing', 'paused', 'failed'].includes(j.status)),
-      history: g.jobsHistory.slice(0, 28)
-    };
-
-    const subTabs = ['available', 'accepted', 'active', 'history'];
-    const labels = { available: 'Available Jobs', accepted: 'Accepted Jobs', active: 'Active Jobs', history: 'Completed / Failed' };
-
-    document.getElementById('tab-jobs').innerHTML = `
-      <div class="subtabs">
-        ${subTabs.map(s => `<button class="btn subtab ${this.activeJobsSubtab === s ? 'active' : ''}" data-act="jobsSubtab" data-subtab="${s}">${labels[s]}</button>`).join('')}
-      </div>
-      ${groups[this.activeJobsSubtab].length ? groups[this.activeJobsSubtab].map(j => this.jobCard(j, this.activeJobsSubtab)).join('') : '<div class="card muted">No jobs in this section right now.</div>'}
-    `;
-  }
-
-  renderPrinters() {
-    const g = this.g;
-    const cards = g.printerCatalog.map(m => `
-      <div class="card" title="${m.specialty}">
-        <h4>${m.name}</h4>
-        <div class="row muted"><span>Tier ${m.tier}</span><span>Cost $${m.cost}</span></div>
-        <div class="row muted"><span>SPD ${m.speed}</span><span>REL ${m.reliability}</span><span>QLT ${m.quality}</span></div>
-        <div class="row muted"><span>CMP ${m.complexity}</span><span>SIZE ${m.maxSize}</span><span>CLR ${m.multicolor}</span></div>
-        <div class="muted">${m.specialty}</div>
-        <button class="btn primary" data-act="buyPrinter" data-name="${m.name}">Buy ${m.name}</button>
-      </div>
-    `).join('');
-
-    const owned = g.printers.map(p => {
-      const upCost = Math.round(250 * (p.upgradeLevel + 1) * (1 + p.model.tier * 0.35));
-      return `
-        <div class="card">
-          <h4>#${p.id} ${p.name}</h4>
-          <div class="row muted"><span>Status ${p.status}</span><span>Mk.${p.upgradeLevel}</span><span>Condition ${Math.round(p.condition)}%</span></div>
-          <button class="btn" data-act="selectPrinter" data-id="${p.id}">Open Details</button>
-          <button class="btn" data-act="upgradePrinter" data-id="${p.id}">Upgrade ($${upCost})</button>
-        </div>
-      `;
-    }).join('');
-
-    document.getElementById('tab-printers').innerHTML = `<h3>Printer Market</h3>${cards}<h3>Installed Printers</h3>${owned || '<div class="card muted">No printers installed yet.</div>'}`;
-  }
-
-  renderUpgrades() {
-    const g = this.g;
-    document.getElementById('tab-upgrades').innerHTML = `
-      <h3>Business Upgrades</h3>
-      ${g.shopUpgrades.map(u => `
-        <div class="card">
-          <h4>${u.name}</h4>
-          <div class="muted">${u.effect}</div>
-          <div class="row"><span>Cost $${u.cost}</span><span>${u.purchased ? 'Owned' : 'Available'}</span></div>
-          <button class="btn ${u.purchased ? '' : 'primary'}" data-act="buyUpgrade" data-id="${u.id}" ${u.purchased ? 'disabled' : ''}>${u.purchased ? 'Installed' : 'Purchase'}</button>
-        </div>
-      `).join('')}
-    `;
-  }
-
-  renderLocations() {
-    const g = this.g;
-    document.getElementById('tab-locations').innerHTML = `
-      <h3>Location Expansion</h3>
-      ${g.locations.map(loc => {
-        const unlocked = g.unlockedLocations.includes(loc.id);
-        return `
-          <div class="card">
-            <h4>${loc.name} ${g.currentLocationId === loc.id ? '(Current)' : ''}</h4>
-            <div class="muted">${loc.theme}</div>
-            <div class="row"><span>Capacity ${loc.capacity}</span><span>Job tier gate ${loc.jobTier}</span></div>
-            <div class="row muted"><span>Unlock $${loc.unlockCost}</span><span>Needs ${loc.requiredPrinters} printers</span></div>
-            <div class="muted">Payout x${loc.bonus.payout} · Failure x${loc.bonus.failMod}</div>
-            ${unlocked ? `<button class="btn" data-act="moveLocation" data-id="${loc.id}" ${g.currentLocationId === loc.id ? 'disabled' : ''}>Move</button>` : `<button class="btn primary" data-act="unlockLocation" data-id="${loc.id}">Unlock</button>`}
-          </div>
-        `;
-      }).join('')}
-    `;
   }
 
   renderPanels() {
@@ -793,55 +431,88 @@ class Renderer {
     this.renderLocations();
   }
 
-  renderLog() {
-    this.eventLog.innerHTML = this.g.eventFeed.map(l => `<div class="log-item">${l}</div>`).join('');
+  renderJobs() {
+    const g = this.g;
+    const printerOpts = g.printers.map(p => `<option value="${p.id}">#${p.id} ${p.name} (${p.status})</option>`).join('');
+    document.getElementById('tab-jobs').innerHTML = `
+      <h3>Available Jobs</h3>
+      ${g.jobsAvailable.map(j => `<div class="card" title="Complexity ${j.complexityRequirement}, Size ${j.sizeRequirement}, Color ${j.colorComplexity}">
+        <h4>${j.title}</h4>
+        <div class="row muted"><span>${j.clientType}</span><span>Category: ${j.category}</span></div>
+        <div class="row"><span>Diff ${j.difficulty}</span><span>Time ${j.requiredTime}m</span><span>Deadline ${j.deadlineMinutes}m</span></div>
+        <div class="row"><strong>$${j.payout}</strong><span class="muted">Size ${j.sizeRequirement} | Complexity ${j.complexityRequirement}</span></div>
+        <button class="btn primary" data-act="accept" data-id="${j.id}">Accept</button>
+        <button class="btn" data-act="reject" data-id="${j.id}">Reject</button>
+      </div>`).join('')}
+      <h3>Accepted Jobs</h3>
+      ${g.jobsAccepted.slice().reverse().map(j => `
+      <div class="card">
+        <h4>${j.title} <span class="muted">[${j.status}]</span></h4>
+        <div class="row"><span>Payout: $${j.payout}</span><span>Deadline: ${Math.max(0, Math.ceil(j.deadlineMinutes))}m</span></div>
+        <div class="progress"><div style="width:${j.progress}%"></div></div>
+        <div class="row muted"><span>Assigned: ${j.assignedPrinterId ? '#' + j.assignedPrinterId : 'none'}</span><span>Remaining: ${Math.max(0, Math.ceil(j.remainingMinutes))}m</span></div>
+        ${j.status === 'waiting' ? `<select data-act="pickPrinter" data-id="${j.id}">${printerOpts}</select><button class="btn" data-act="assign" data-id="${j.id}">Assign</button>` : ''}
+        ${j.status === 'failed' ? `<button class="btn primary" data-act="restart" data-id="${j.id}">Restart</button>` : ''}
+        ${['completed', 'forfeited', 'missed deadline'].includes(j.status) ? '' : `<button class="btn danger" data-act="forfeit" data-id="${j.id}">Forfeit</button>`}
+      </div>`).join('')}
+    `;
   }
 
-  renderPrinterDrawer() {
+  renderPrinters() {
     const g = this.g;
-    const id = g.selectedPrinterId;
-    const p = g.printers.find(x => x.id === id);
-    if (!p) {
-      this.drawer.classList.add('hidden');
-      this.drawer.innerHTML = '';
-      return;
-    }
-
-    const job = g.jobsAccepted.find(j => j.id === p.currentJobId);
-    const upCost = Math.round(250 * (p.upgradeLevel + 1) * (1 + p.model.tier * 0.35));
-    const s = p.statBlock;
-    const risk = job ? g.estimateFailureRisk(job, p) : null;
-
-    this.drawer.classList.remove('hidden');
-    this.drawer.innerHTML = `
-      <div class="panel-head">
-        <h3>${p.name} #${p.id}</h3>
-        <button class="btn" data-act="closePrinter">Close</button>
-      </div>
-      <div class="card">
-        <div class="row"><span>Status</span><strong>${p.status.toUpperCase()}</strong></div>
-        <div class="row"><span>Assigned Job</span><strong>${job ? job.title : 'None'}</strong></div>
-        <div class="row"><span>Percent Complete</span><strong>${job ? Math.round(job.progress) : 0}%</strong></div>
-        <div class="row"><span>Time Remaining</span><strong>${job ? Math.max(0, Math.ceil(job.remainingMinutes)) : 0}m</strong></div>
-        <div class="row"><span>Failure Chance (job)</span><strong>${risk ? `${risk.label} (${risk.percent}%)` : 'Low (n/a)'}</strong></div>
-        <div class="row"><span>Maintenance State</span><strong>${s.healthState}</strong></div>
-      </div>
-      <div class="card">
-        <div class="row muted"><span>Speed ${Math.round(s.speed)}</span><span>Reliability ${s.reliability}</span><span>Quality ${s.quality}</span></div>
-        <div class="row muted"><span>Complexity ${s.complexity}</span><span>Max Size ${s.maxSize}</span><span>Multi-color ${s.multicolor}</span></div>
-        <div class="row muted"><span>Upgrade Mk.${p.upgradeLevel}</span><span>Condition ${Math.round(p.condition)}%</span></div>
-      </div>
-      <div class="row">
-        <button class="btn" data-act="inspectPrinter" data-id="${p.id}">Inspect</button>
-        <button class="btn" data-act="maintainPrinter" data-id="${p.id}">Maintenance</button>
-        <button class="btn" data-act="upgradePrinter" data-id="${p.id}">Upgrade ($${upCost})</button>
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <button class="btn primary" data-act="assignFromPrinter" data-id="${p.id}">Assign Job</button>
-        <button class="btn" data-act="${p.status === 'paused' ? 'resumePrinter' : 'pausePrinter'}" data-id="${p.id}">${p.status === 'paused' ? 'Resume' : 'Pause'}</button>
-        <button class="btn danger" data-act="cancelPrinterJob" data-id="${p.id}">Cancel</button>
-      </div>
+    document.getElementById('tab-printers').innerHTML = `
+      <h3>Printer Shop</h3>
+      ${g.printerCatalog.map(model => `<div class="card" title="Tier ${model.tier} | Speed ${model.speed} | Reliability ${model.reliability}">
+        <h4>${model.name}</h4>
+        <div class="row muted"><span>Tier ${model.tier}</span><span>Cost: $${model.cost}</span></div>
+        <div class="row"><span>Quality ${model.quality}</span><span>Complexity ${model.complexity}</span><span>Max Size ${model.maxSize}</span></div>
+        <div class="row"><span>Multi-color ${model.multicolor}</span><span>Failure ${Math.round(model.failChance * 100)}%</span></div>
+        <button class="btn primary" data-act="buyPrinter" data-name="${model.name}">Buy ${model.name}</button>
+      </div>`).join('')}
+      <h3>Owned Printers</h3>
+      ${g.printers.map(p => {
+        const upCost = Math.round(220 * (p.upgradeLevel + 1) * (1 + p.model.tier * 0.4));
+        const s = p.statBlock;
+        return `<div class="card" title="Speed ${s.speed.toFixed(1)}, Reliability ${s.reliability}, Complexity ${s.complexity}">
+          <h4>#${p.id} ${p.name} <span class="muted">${p.status}</span></h4>
+          <div class="row"><span>Mk.${p.upgradeLevel}</span><span>Fail ${Math.round(s.failChance * 100)}%</span><span>Quality ${s.quality}</span></div>
+          <button class="btn" data-act="upgradePrinter" data-id="${p.id}">Upgrade ($${upCost})</button>
+        </div>`;
+      }).join('')}
     `;
+  }
+
+  renderUpgrades() {
+    const g = this.g;
+    document.getElementById('tab-upgrades').innerHTML = `
+      <h3>Business Upgrades</h3>
+      ${g.shopUpgrades.map(u => `<div class="card">
+        <h4>${u.name}</h4><div class="muted">${u.effect}</div>
+        <div class="row"><span>Cost: $${u.cost}</span><span>${u.purchased ? 'Purchased' : 'Available'}</span></div>
+        <button class="btn ${u.purchased ? '' : 'primary'}" data-act="buyUpgrade" data-id="${u.id}" ${u.purchased ? 'disabled' : ''}>${u.purchased ? 'Owned' : 'Purchase'}</button>
+      </div>`).join('')}
+    `;
+  }
+
+  renderLocations() {
+    const g = this.g;
+    document.getElementById('tab-locations').innerHTML = `
+      <h3>Locations</h3>
+      ${g.locations.map(l => {
+        const unlocked = g.unlockedLocations.includes(l.id);
+        return `<div class="card" title="${l.theme}">
+          <h4>${l.name} ${g.currentLocationId === l.id ? '(Current)' : ''}</h4>
+          <div class="row"><span>Capacity ${l.capacity}</span><span>Tier ${l.jobTier}</span></div>
+          <div class="row muted"><span>Unlock $${l.unlockCost}</span><span>Needs ${l.requiredPrinters} printers</span></div>
+          <div class="muted">Payout x${l.bonus.payout} • Failure modifier x${l.bonus.failMod}</div>
+          ${unlocked ? `<button class="btn" data-act="moveLocation" data-id="${l.id}" ${g.currentLocationId === l.id ? 'disabled' : ''}>Move Here</button>` : `<button class="btn primary" data-act="unlockLocation" data-id="${l.id}">Unlock</button>`}
+        </div>`;
+      }).join('')}
+    `;
+  }
+
+  renderLog() {
+    this.eventLog.innerHTML = this.g.eventFeed.map(e => `<div class="log-item">${e}</div>`).join('');
   }
 }
 
@@ -853,49 +524,25 @@ renderer.renderAll();
 
 function bindActions() {
   document.body.addEventListener('click', (e) => {
-    const node = e.target.closest('[data-act]');
-    if (!node) return;
-    const act = node.dataset.act;
-    const id = Number(node.dataset.id);
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const act = b.dataset.act;
+    const id = Number(b.dataset.id);
     let err = null;
-
-    if (act === 'jobsSubtab') renderer.activeJobsSubtab = node.dataset.subtab;
     if (act === 'accept') game.acceptJob(id);
     if (act === 'reject') game.rejectJob(id);
     if (act === 'assign') {
-      const select = document.querySelector(`select[data-act='pickPrinter'][data-id='${id}']`);
-      err = game.assignJob(id, Number(select?.value));
+      const pick = document.querySelector(`select[data-act='pickPrinter'][data-id='${id}']`);
+      err = game.assignJob(id, Number(pick?.value));
     }
     if (act === 'forfeit') game.forfeitJob(id);
     if (act === 'restart') game.restartJob(id);
-
-    if (act === 'buyPrinter') err = game.buyPrinter(node.dataset.name);
+    if (act === 'buyPrinter') err = game.buyPrinter(b.dataset.name);
     if (act === 'upgradePrinter') err = game.upgradePrinter(id);
-    if (act === 'maintainPrinter') err = game.maintainPrinter(id);
-    if (act === 'pausePrinter') err = game.pausePrinter(id);
-    if (act === 'resumePrinter') err = game.resumePrinter(id);
-    if (act === 'cancelPrinterJob') err = game.cancelPrinterJob(id);
-    if (act === 'inspectPrinter') game.inspectPrinter(id);
-    if (act === 'selectPrinter') game.selectedPrinterId = id;
-    if (act === 'assignFromPrinter') {
-      const candidate = game.jobsAccepted.find(j => j.status === 'accepted' && game.getAvailablePrintersForJob(j.id).some(p => p.id === id));
-      if (candidate) err = game.assignJob(candidate.id, id);
-      else err = 'No compatible accepted job available for this printer.';
-    }
-    if (act === 'closePrinter') game.selectedPrinterId = null;
-
-    if (act === 'buyUpgrade') err = game.buyShopUpgrade(node.dataset.id);
-    if (act === 'unlockLocation') err = game.unlockLocation(node.dataset.id);
-    if (act === 'moveLocation') err = game.moveLocation(node.dataset.id);
-
+    if (act === 'buyUpgrade') err = game.buyShopUpgrade(b.dataset.id);
+    if (act === 'unlockLocation') err = game.unlockLocation(b.dataset.id);
+    if (act === 'moveLocation') err = game.moveLocation(b.dataset.id);
     if (err) game.addLog(`Action blocked: ${err}`);
-    renderer.renderAll();
-  });
-
-  document.getElementById('locationScene').addEventListener('click', (e) => {
-    const node = e.target.closest('[data-printer]');
-    if (!node) return;
-    game.selectedPrinterId = Number(node.dataset.printer);
     renderer.renderAll();
   });
 }
@@ -908,15 +555,14 @@ setInterval(() => {
 
 setInterval(() => {
   SaveManager.save(game);
-  renderer.notice.textContent = `Autosaved · Day ${game.day} ${game.timeString}`;
-  setTimeout(() => renderer.notice.textContent = 'Autosave ready', 850);
+  renderer.notice.textContent = `Autosaved • Day ${game.day} ${game.timeString}`;
+  setTimeout(() => renderer.notice.textContent = 'Autosave ready', 800);
 }, 10000);
 
 document.getElementById('resetBtn').addEventListener('click', () => {
-  if (!confirm('Reset all progress and clear save?')) return;
+  if (!confirm('Reset game and clear save?')) return;
   SaveManager.clear();
   game.reset();
-  renderer.activeJobsSubtab = 'available';
   renderer.renderAll();
 });
 
