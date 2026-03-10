@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Print Farm Tycoon</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="tutorialModal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Mini Print Farm Tycoon</h2>
+      <p>Start small, print smart, and scale from a dorm setup to a full warehouse farm.</p>
+      <ul>
+        <li>Buy your first <strong>P1S</strong> and take Tier 1 jobs.</li>
+        <li>Move jobs through <strong>Available → Accepted → Active → History</strong>.</li>
+        <li>Click printers in the workshop for controls, maintenance, and upgrades.</li>
+      </ul>
+      <button id="closeTutorialBtn" class="btn primary">Begin Shift</button>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <h1>Mini Print Farm Tycoon</h1>
+      <span class="tag">Industrial Prototype Build</span>
+    </div>
+    <div class="stats-grid" id="topStats"></div>
+    <div class="reputation-wrap">
+      <span>Reputation</span>
+      <div class="rep-bar"><div id="repFill"></div></div>
+      <span id="repText">50 / 100</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="diorama-panel">
+      <div class="scene-header">
+        <h3>Workshop Floor</h3>
+        <span id="sceneLocationLabel"></span>
+      </div>
+      <div class="location-scene" id="locationScene"></div>
+      <div class="autosave" id="autosaveNotice">Autosave ready</div>
+    </section>
+
+    <section class="tabs-panel">
+      <div class="tab-buttons">
+        <button class="btn tab active" data-tab="jobs">Jobs</button>
+        <button class="btn tab" data-tab="printers">Printers</button>
+        <button class="btn tab" data-tab="upgrades">Upgrades</button>
+        <button class="btn tab" data-tab="locations">Locations</button>
+      </div>
+
+      <div id="tab-jobs" class="tab-content active"></div>
+      <div id="tab-printers" class="tab-content"></div>
+      <div id="tab-upgrades" class="tab-content"></div>
+      <div id="tab-locations" class="tab-content"></div>
+    </section>
+
+    <aside class="event-panel">
+      <div class="panel-head">
+        <h3>Ops Feed</h3>
+        <button id="resetBtn" class="btn danger">Reset</button>
+      </div>
+      <div id="eventLog"></div>
+    </aside>
+  </main>
+
+  <div id="printerDetailPanel" class="drawer hidden"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
